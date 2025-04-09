@@ -171,7 +171,7 @@ const Posts = () => {
         try {
             const postRef = doc(firestore, 'posts', postId, 'likes', userId);
             const postDoc = await getDoc(postRef);
-
+            console.log(postDoc.exists());
             if (postDoc.exists()) {
                 await deletePostLike(postId, userId);
             } else {
@@ -181,6 +181,7 @@ const Posts = () => {
             console.error('Error toggling like:', error);
         }
     };
+
 
     return (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 ">

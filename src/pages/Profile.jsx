@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
 import { useParams, useNavigate } from "react-router-dom";
-import { getUserDoc, getUserPosts, getUserBlogs, getUserSnippets, getUserProjects, updateUserProfile } from "../services/firebaseServices";
-import { FaUserEdit, FaSave, FaGithub, FaLink } from 'react-icons/fa';
+import { getUserDoc, getUserPosts, getUserBlogs, getUserSnippets, getUserProjects, updateUserProfile, followUser, unfollowUser, checkIfFollowing } from "../services/firebaseServices";
+import { FaUserEdit, FaSave, FaGithub, FaLink, FaUserPlus, FaUserMinus } from 'react-icons/fa';
 import { toast } from 'react-hot-toast';
 import PostCard from "../components/cards/PostCard";
 
@@ -27,6 +27,9 @@ const Profile = () => {
     const [github, setGithub] = useState('');
     const [website, setWebsite] = useState('');
     const [skills, setSkills] = useState([]);
+    const [isFollowing, setIsFollowing] = useState(false);
+    const [followersCount, setFollowersCount] = useState(0);
+    const [followingCount, setFollowingCount] = useState(0);
 
     useEffect(() => {
         const fetchProfileUser = async () => {
@@ -64,6 +67,16 @@ const Profile = () => {
         fetchProfileUser();
     }, [id, user, isOwner]);
 
+    useEffect(() => {
+        const checkFollowStatus = async () => {
+            if (user && id && !isOwner) {
+                const following = await checkIfFollowing(user.uid, id);
+                setIsFollowing(following);
+            }
+        };
+        checkFollowStatus();
+    }, [user, id, isOwner]);
+
     const handleSave = async () => {
         try {
             await updateUserProfile(id, { displayName, bio, github, website, skills });
@@ -83,6 +96,31 @@ const Profile = () => {
         } catch (error) {
             console.error('Error updating profile:', error);
             toast.error('Failed to update profile');
+        }
+    };
+
+    const handleFollowToggle = async () => {
+        if (!user) {
+            toast.error("Please sign in to follow users");
+            navigate("/signin");
+            return;
+        }
+
+        try {
+            if (isFollowing) {
+                await unfollowUser(user.uid, id);
+                setIsFollowing(false);
+                setFollowersCount(prev => prev - 1);
+                toast.success(`Unfollowed ${profileUser.displayName}`);
+            } else {
+                await followUser(user.uid, id);
+                setIsFollowing(true);
+                setFollowersCount(prev => prev + 1);
+                toast.success(`Following ${profileUser.displayName}`);
+            }
+        } catch (error) {
+            toast.error("Failed to update follow status");
+            console.error(error);
         }
     };
 
@@ -171,26 +209,51 @@ const Profile = () => {
                                     ))
                                 )}
                             </div>
-                        </div>
-                        {isOwner && (
-                            <div className="flex justify-end mt-4 md:mt-0">
-                                {isEditing ? (
-                                    <button
-                                        onClick={handleSave}
-                                        className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 flex items-center gap-2"
-                                    >
-                                        <FaSave /> Save
-                                    </button>
-                                ) : (
-                                    <button
-                                        onClick={() => setIsEditing(true)}
-                                        className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 flex items-center gap-2"
-                                    >
-                                        <FaUserEdit /> Edit
-                                    </button>
-                                )}
+                            <div className="flex items-center gap-4 mt-4">
+                                <span className="text-gray-400">{followersCount} Followers</span>
+                                <span className="text-gray-400">{followingCount} Following</span>
                             </div>
-                        )}
+                        </div>
+                        <div className="flex flex-col gap-4">
+                            {!isOwner && (
+                                <button
+                                    onClick={handleFollowToggle}
+                                    className={`px-4 py-2 rounded-md flex items-center gap-2 ${isFollowing
+                                        ? 'bg-red-600 hover:bg-red-700'
+                                        : 'bg-blue-600 hover:bg-blue-700'
+                                        }`}
+                                >
+                                    {isFollowing ? (
+                                        <>
+                                            <FaUserMinus /> Unfollow
+                                        </>
+                                    ) : (
+                                        <>
+                                            <FaUserPlus /> Follow
+                                        </>
+                                    )}
+                                </button>
+                            )}
+                            {isOwner && (
+                                <div className="flex justify-end mt-4 md:mt-0">
+                                    {isEditing ? (
+                                        <button
+                                            onClick={handleSave}
+                                            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 flex items-center gap-2"
+                                        >
+                                            <FaSave /> Save
+                                        </button>
+                                    ) : (
+                                        <button
+                                            onClick={() => setIsEditing(true)}
+                                            className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 flex items-center gap-2"
+                                        >
+                                            <FaUserEdit /> Edit
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+                        </div>
                     </div>
                     <hr className="my-6 border-gray-700" />
                     {/* Tabs Navigation */}

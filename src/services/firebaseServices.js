@@ -5,6 +5,10 @@ import {
   updateDoc,
   getDocs,
   collection,
+  deleteDoc,
+  arrayUnion,
+  arrayRemove,
+  serverTimestamp,
 } from "firebase/firestore";
 import { firebaseAuth, firestore } from "../config/firebase";
 import {
@@ -41,23 +45,44 @@ export const logout = async () => {
 // 🔹 Sign In with Google
 export const signInWithGoogle = async () => {
   const provider = new GoogleAuthProvider();
-  const userCredential = await signInWithPopup(firebaseAuth, provider);
-  const user = userCredential.user;
+  // Add required scopes
+  provider.addScope("profile");
+  provider.addScope("email");
+  provider.setCustomParameters({
+    prompt: "select_account",
+  });
 
-  const userDocRef = doc(firestore, "users", user.uid);
-  const userDocSnap = await getDoc(userDocRef);
+  try {
+    const userCredential = await signInWithPopup(firebaseAuth, provider);
+    const user = userCredential.user;
 
-  if (!userDocSnap.exists()) {
-    await setDoc(userDocRef, {
-      email: user.email,
-      displayName: user.displayName,
-      uid: user.uid,
-      username: user.email.split("@")[0],
-      createdAt: new Date().toLocaleString(),
-    });
+    const userDocRef = doc(firestore, "users", user.uid);
+    const userDocSnap = await getDoc(userDocRef);
+
+    if (!userDocSnap.exists()) {
+      await setDoc(userDocRef, {
+        email: user.email,
+        displayName: user.displayName,
+        uid: user.uid,
+        photoURL: user.photoURL,
+        username: user.email.split("@")[0],
+        createdAt: new Date().toLocaleString(),
+      });
+    }
+
+    return userCredential;
+  } catch (error) {
+    console.error("Google Sign In Error:", error.code, error.message);
+    if (error.code === "auth/popup-closed-by-user") {
+      throw new Error("Sign in cancelled by user");
+    } else if (error.code === "auth/popup-blocked") {
+      throw new Error(
+        "Pop-up blocked by browser. Please allow pop-ups for this site"
+      );
+    } else {
+      throw new Error("Failed to sign in with Google. Please try again");
+    }
   }
-
-  return userCredential;
 };
 
 // 🔹 Create User with Email & Password
@@ -126,6 +151,144 @@ export const getUserComments = async (uid) => {
   const commentsCollectionRef = collection(firestore, "users", uid, "comments");
   const commentsSnapshot = await getDocs(commentsCollectionRef);
   return commentsSnapshot.docs.map((doc) => doc.data());
+};
+
+export const addFollowers = async (uid, followerId) => {
+  if (!uid || !followerId) return;
+
+  try {
+    const followerRef = doc(firestore, "users", uid, "followers", followerId);
+    const followingRef = doc(firestore, "users", followerId, "following", uid);
+
+    const followerDoc = await getDoc(followerRef);
+
+    if (followerDoc.exists()) {
+      await deleteDoc(followerRef);
+      await deleteDoc(followingRef);
+      console.log("Unfollowed user:", uid);
+    } else {
+      await setDoc(followerRef, { followedAt: serverTimestamp() });
+      await setDoc(followingRef, { followingAt: serverTimestamp() });
+      console.log("Followed user:", uid);
+    }
+  } catch (error) {
+    console.error("Error handling followers:", error);
+  }
+};
+
+//   get Followers
+export const getFollowers = async (uid) => {
+  const followersCollectionRef = collection(
+    firestore,
+    "users",
+    uid,
+    "followers"
+  );
+  const followersSnapshot = await getDocs(followersCollectionRef);
+  return followersSnapshot.docs.map((doc) => doc.data());
+};
+
+//   get Following
+export const getFollowing = async (uid) => {
+  const followingCollectionRef = collection(
+    firestore,
+    "users",
+    uid,
+    "following"
+  );
+  const followingSnapshot = await getDocs(followingCollectionRef);
+  return followingSnapshot.docs.map((doc) => doc.data());
+};
+
+// Follow a user
+export const followUser = async (followerId, followingId) => {
+  try {
+    const followerRef = doc(
+      firestore,
+      "users",
+      followerId,
+      "following",
+      followingId
+    );
+    const followingRef = doc(
+      firestore,
+      "users",
+      followingId,
+      "followers",
+      followerId
+    );
+
+    // Get both users' data
+    const followerDoc = await getDoc(doc(firestore, "users", followerId));
+    const followingDoc = await getDoc(doc(firestore, "users", followingId));
+
+    // Add to following collection of follower
+    await setDoc(followerRef, {
+      uid: followingId,
+      displayName: followingDoc.data().displayName,
+      photoURL: followingDoc.data().photoURL,
+      timestamp: new Date().toISOString(),
+    });
+
+    // Add to followers collection of following
+    await setDoc(followingRef, {
+      uid: followerId,
+      displayName: followerDoc.data().displayName,
+      photoURL: followerDoc.data().photoURL,
+      timestamp: new Date().toISOString(),
+    });
+
+    return true;
+  } catch (error) {
+    console.error("Error following user:", error);
+    throw error;
+  }
+};
+
+// Unfollow a user
+export const unfollowUser = async (followerId, followingId) => {
+  try {
+    const followerRef = doc(
+      firestore,
+      "users",
+      followerId,
+      "following",
+      followingId
+    );
+    const followingRef = doc(
+      firestore,
+      "users",
+      followingId,
+      "followers",
+      followerId
+    );
+
+    await deleteDoc(followerRef);
+    await deleteDoc(followingRef);
+
+    return true;
+  } catch (error) {
+    console.error("Error unfollowing user:", error);
+    throw error;
+  }
+};
+
+// Check if user is following another user
+export const checkIfFollowing = async (followerId, followingId) => {
+  try {
+    const followerRef = doc(
+      firestore,
+      "users",
+      followerId,
+      "following",
+      followingId
+    );
+    const docSnap = await getDoc(followerRef);
+    return docSnap.exists();
+  } catch (error) {
+    console.error("Error checking follow status:", error);
+    return false;
+  }
 };
 
 // Add the updateUserProfile function to update user profiles
